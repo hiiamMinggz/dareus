@@ -1,8 +1,12 @@
+from decimal import Decimal
 import uuid
 from dataclasses import dataclass
 from uuid import UUID
 
 from app.domain.value_objects.base import ValueObject
+from app.domain.value_objects.credibility.credibility import Credibility
+from app.domain.value_objects.email.email import Email
+from app.domain.value_objects.money.user_balance import UserBalance
 from app.domain.value_objects.raw_password.raw_password import RawPassword
 from app.domain.value_objects.user_id import UserId
 from app.domain.value_objects.user_password_hash import UserPasswordHash
@@ -42,3 +46,12 @@ def create_raw_password(value: str = "Good Password") -> RawPassword:
 
 def create_password_hash(value: bytes = b"password_hash") -> UserPasswordHash:
     return UserPasswordHash(value)
+
+def create_email(value: str = "alice@example.com") -> Email:
+    return Email(value)
+
+def create_credibility(value: float = 5.0) -> Credibility:
+    return Credibility(value)
+
+def create_balance(value: Decimal = Decimal('10.000')) -> UserBalance:
+    return UserBalance(value)

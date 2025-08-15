@@ -10,7 +10,8 @@ from app.domain.exceptions.user import (
 from app.domain.ports.password_hasher import PasswordHasher
 from app.domain.ports.user_id_generator import UserIdGenerator
 from app.domain.value_objects.credibility.credibility import Credibility
-from app.domain.value_objects.money.balance import Balance
+from app.domain.value_objects.email.email import Email
+from app.domain.value_objects.money.user_balance import UserBalance
 from app.domain.value_objects.raw_password.raw_password import RawPassword
 from app.domain.value_objects.user_id import UserId
 from app.domain.value_objects.user_password_hash import UserPasswordHash
@@ -28,13 +29,15 @@ class UserService:
 
     def create_user(
         self,
+        *,
         username: Username,
         raw_password: RawPassword,
+        email: Email,
         user_type: UserType,
         role: UserRole = UserRole.USER,
         locked: bool = False,
         credibility: Credibility = Credibility.zero(),
-        balance: Balance = Balance.zero(),
+        balance: UserBalance = UserBalance.zero(),
     ) -> User:
         """
         :raises RoleAssignmentNotPermittedError:
@@ -49,6 +52,7 @@ class UserService:
             id_=user_id,
             username=username,
             password_hash=password_hash,
+            email=email,
             role=role,
             locked=locked,
             user_type=user_type,

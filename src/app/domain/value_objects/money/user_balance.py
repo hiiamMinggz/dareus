@@ -5,6 +5,6 @@ from app.domain.value_objects.money.base import Money
 
 @total_ordering
 @dataclass(frozen=True, repr=False)
-class Balance(Money):
+class UserBalance(Money):
     """raises DomainFieldError"""
 

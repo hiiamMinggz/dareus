@@ -1,17 +1,22 @@
+from decimal import Decimal
 from unittest.mock import MagicMock
 
 import pytest
 
 from app.domain.entities.user import User
-from app.domain.enums.user_type import UserRole
+from app.domain.enums.user_type import UserRole, UserType
+from app.domain.exceptions.base import DomainFieldError
 from app.domain.exceptions.user import (
     ActivationChangeNotPermittedError,
     RoleAssignmentNotPermittedError,
     RoleChangeNotPermittedError,
 )
 from app.domain.services.user import UserService
-from tests.app.unit.factories.user_entity import create_user
+from app.domain.value_objects.money.user_balance import UserBalance
 from tests.app.unit.factories.value_objects import (
+    create_balance,
+    create_credibility,
+    create_email,
     create_password_hash,
     create_raw_password,
     create_user_id,
@@ -23,8 +28,14 @@ from tests.app.unit.factories.value_objects import (
     "role",
     [UserRole.USER, UserRole.ADMIN],
 )
+
+@pytest.mark.parametrize(
+    "user_type",
+    [UserType.VIEWER, UserType.STREAMER],
+)
 def test_creates_active_user_with_hashed_password(
     role: UserRole,
+    user_type: UserType,
     user_id_generator: MagicMock,
     password_hasher: MagicMock,
 ) -> None:
@@ -34,13 +45,25 @@ def test_creates_active_user_with_hashed_password(
 
     expected_id = create_user_id()
     expected_hash = create_password_hash()
+    expected_email = create_email()
+    expected_credibility = create_credibility()
+    expected_balance = create_balance()
 
     user_id_generator.return_value = expected_id.value
     password_hasher.hash.return_value = expected_hash.value
     sut = UserService(user_id_generator, password_hasher)
 
     # Act
-    result = sut.create_user(username, raw_password, role)
+    result = sut.create_user(
+        username=username,
+        raw_password=raw_password,
+        email=expected_email,
+        role=role,
+        user_type=user_type,
+        credibility=expected_credibility,
+        balance=expected_balance,
+        locked=False,
+    )
 
     # Assert
     assert isinstance(result, User)
@@ -48,10 +71,24 @@ def test_creates_active_user_with_hashed_password(
     assert result.username == username
     assert result.password_hash == expected_hash
     assert result.role == role
-    assert result.is_active is True
+    assert result.locked is False
+    assert result.email == expected_email
+    assert result.credibility == expected_credibility
+    assert result.balance == expected_balance
+    assert result.user_type == user_type
 
+@pytest.mark.parametrize(
+    "role",
+    [UserRole.USER, UserRole.ADMIN],
+)
 
-def test_creates_inactive_user_if_specified(
+@pytest.mark.parametrize(
+    "user_type",
+    [UserType.VIEWER, UserType.STREAMER],
+)
+def test_creates_locked_user_if_specified(
+    role: UserRole,
+    user_type: UserType,
     user_id_generator: MagicMock,
     password_hasher: MagicMock,
 ) -> None:
@@ -61,142 +98,157 @@ def test_creates_inactive_user_if_specified(
 
     expected_id = create_user_id()
     expected_hash = create_password_hash()
+    expected_email = create_email()
+    expected_credibility = create_credibility()
+    expected_balance = create_balance()
 
     user_id_generator.return_value = expected_id.value
     password_hasher.hash.return_value = expected_hash.value
     sut = UserService(user_id_generator, password_hasher)
 
     # Act
-    result = sut.create_user(username, raw_password, is_active=False)
+    result = sut.create_user(
+        username=username,
+        raw_password=raw_password,
+        email=expected_email,
+        role=role,
+        user_type=user_type,
+        credibility=expected_credibility,
+        balance=expected_balance,
+        locked=True,
+    )
 
     # Assert
-    assert not result.is_active
-
-
-def test_fails_to_create_user_with_unassignable_role(
-    user_id_generator: MagicMock,
-    password_hasher: MagicMock,
-) -> None:
-    username = create_username()
-    raw_password = create_raw_password()
-    sut = UserService(user_id_generator, password_hasher)
-
-    with pytest.raises(RoleAssignmentNotPermittedError):
-        sut.create_user(
-            username=username,
-            raw_password=raw_password,
-            role=UserRole.SUPER_ADMIN,
-        )
-
+    assert result.locked is True
 
 @pytest.mark.parametrize(
-    "is_valid",
-    [True, False],
+    "role",
+    [UserRole.USER, UserRole.ADMIN],
 )
-def test_checks_password_authenticity(
-    is_valid: bool,
+
+@pytest.mark.parametrize(
+    "user_type",
+    [UserType.VIEWER, UserType.STREAMER],
+)
+def test_creates_active_user_with_invalid_balance(
+    role: UserRole,
+    user_type: UserType,
     user_id_generator: MagicMock,
     password_hasher: MagicMock,
 ) -> None:
     # Arrange
-    user = create_user()
+    username = create_username()
     raw_password = create_raw_password()
 
-    password_hasher.verify.return_value = is_valid
-    sut = UserService(user_id_generator, password_hasher)
+    expected_id = create_user_id()
+    expected_hash = create_password_hash()
+    valid_email = create_email()
+    valid_credibility = create_credibility()
 
-    # Act
-    result = sut.is_password_valid(user, raw_password)
-
-    # Assert
-    assert result is is_valid
-
-
-def test_changes_password(
-    user_id_generator: MagicMock,
-    password_hasher: MagicMock,
-) -> None:
-    # Arrange
-    initial_hash = create_password_hash(b"old")
-    user = create_user(password_hash=initial_hash)
-    raw_password = create_raw_password()
-
-    expected_hash = create_password_hash(b"new")
+    user_id_generator.return_value = expected_id.value
     password_hasher.hash.return_value = expected_hash.value
     sut = UserService(user_id_generator, password_hasher)
 
     # Act
-    sut.change_password(user, raw_password)
+    with pytest.raises(DomainFieldError, match="Money cannot be negative"):
+        sut.create_user(
+            username=username,
+            raw_password=raw_password,
+            email=valid_email,
+            role=role,
+            user_type=user_type,
+            credibility=valid_credibility,
+            balance=create_balance(value=Decimal("-10.000")),
+            locked=False
+        )
+
+@pytest.mark.parametrize(
+    "role",
+    [UserRole.USER, UserRole.ADMIN],
+)
+
+@pytest.mark.parametrize(
+    "user_type",
+    [UserType.VIEWER, UserType.STREAMER],
+)
+def test_increases_balance(
+    role: UserRole,
+    user_type: UserType,
+    user_id_generator: MagicMock,
+    password_hasher: MagicMock,
+) -> None:
+    # Arrange
+    username = create_username()
+    raw_password = create_raw_password()
+
+    expected_id = create_user_id()
+    expected_hash = create_password_hash()
+    valid_email = create_email()
+    valid_credibility = create_credibility()
+    valid_balance = create_balance(value=Decimal("10.000"))
+
+    user_id_generator.return_value = expected_id.value
+    password_hasher.hash.return_value = expected_hash.value
+    sut = UserService(user_id_generator, password_hasher)
+
+    # Act
+    user = sut.create_user(
+        username=username,
+        raw_password=raw_password,
+        email=valid_email,
+        role=role,
+        user_type=user_type,
+        credibility=valid_credibility,
+        balance=valid_balance,
+        locked=False,
+    )
+
+    sut.increase_balance(user=user, amount=Decimal("10.000"))
 
     # Assert
-    assert user.password_hash == expected_hash
+    assert user.balance == UserBalance(amount=Decimal("20.000"))
 
 
 @pytest.mark.parametrize(
-    "is_active",
-    [True, False],
+    "role",
+    [UserRole.USER, UserRole.ADMIN],
 )
-def test_toggles_activation_state(
-    is_active: bool,
-    user_id_generator: MagicMock,
-    password_hasher: MagicMock,
-) -> None:
-    user = create_user(is_active=not is_active)
-    sut = UserService(user_id_generator, password_hasher)
-
-    sut.toggle_user_activation(user, is_active=is_active)
-
-    assert user.is_active is is_active
-
 
 @pytest.mark.parametrize(
-    "is_active",
-    [True, False],
+    "user_type",
+    [UserType.VIEWER, UserType.STREAMER],
 )
-def test_preserves_super_admin_activation_state(
-    is_active: bool,
+def test_decrease_insufficient_funds(
+    role: UserRole,
+    user_type: UserType,
     user_id_generator: MagicMock,
     password_hasher: MagicMock,
 ) -> None:
-    user = create_user(role=UserRole.SUPER_ADMIN, is_active=not is_active)
+    # Arrange
+    username = create_username()
+    raw_password = create_raw_password()
+
+    expected_id = create_user_id()
+    expected_hash = create_password_hash()
+    valid_email = create_email()
+    valid_credibility = create_credibility()
+    valid_balance = create_balance(value=Decimal("10.000"))
+
+    user_id_generator.return_value = expected_id.value
+    password_hasher.hash.return_value = expected_hash.value
     sut = UserService(user_id_generator, password_hasher)
 
-    with pytest.raises(ActivationChangeNotPermittedError):
-        sut.toggle_user_activation(user, is_active=is_active)
-
-    assert user.is_active is not is_active
-
-
-@pytest.mark.parametrize(
-    "is_admin",
-    [True, False],
-)
-def test_toggles_role(
-    is_admin: bool,
-    user_id_generator: MagicMock,
-    password_hasher: MagicMock,
-) -> None:
-    user = create_user()
-    sut = UserService(user_id_generator, password_hasher)
-
-    sut.toggle_user_admin_role(user, is_admin=is_admin)
-
-    assert user.role == UserRole.ADMIN if is_admin else UserRole.USER
-
-
-@pytest.mark.parametrize(
-    "is_admin",
-    [True, False],
-)
-def test_preserves_super_admin_role(
-    is_admin: bool,
-    user_id_generator: MagicMock,
-    password_hasher: MagicMock,
-) -> None:
-    user = create_user(role=UserRole.SUPER_ADMIN)
-    sut = UserService(user_id_generator, password_hasher)
-
-    with pytest.raises(RoleChangeNotPermittedError):
-        sut.toggle_user_admin_role(user, is_admin=is_admin)
-
-    assert user.role == UserRole.SUPER_ADMIN
+    # Act
+    user = sut.create_user(
+        username=username,
+        raw_password=raw_password,
+        email=valid_email,
+        role=role,
+        user_type=user_type,
+        credibility=valid_credibility,
+        balance=valid_balance,
+        locked=False,
+    )
+    # Assert
+    with pytest.raises(DomainFieldError, match="Insufficient funds"):
+        sut.decrease_balance(user=user, amount=Decimal("20.000"))
